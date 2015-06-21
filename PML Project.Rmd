@@ -1,0 +1,118 @@
+---
+title: "Practical Machine Learning Project"
+author: "Cheng, Yu-Heng"
+date: "June 21, 2015"
+output: html_document
+---
+## Overview
+This report is for Practical Machine Learning project. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+## Load libraries, download data and set data directory
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+#Load libraries
+library(caret)
+library(randomForest)
+
+#Download data and set data directory
+trainUrl <-"http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile = trainFile)
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile = testFile)
+}
+```
+
+## Read Data
+The original data set has 160 variables (including "classe").
+```{r, echo=TRUE}
+#Read the training and testing data
+train <- read.csv(trainFile, header = T, 
+                  na.strings=c("NA","","#DIV/0!"))
+test <- read.csv(testFile, header = T, 
+                 na.strings=c("NA","","#DIV/0!"))
+dim(train)
+dim(test)
+```
+
+## Clean Data
+After cleaning, the data set has only 54 variables now (including "classe").
+```{r, echo=TRUE}
+#Cleaning data
+#1. Check NA columns
+#Check % of NA for every column
+percNA <- sapply(1:160, function(i) sum(is.na(train[,i]))/dim(train)[1])
+
+#The plot shows that it is either close to 1 or exactly zero for each column
+plot(percNA)
+
+#List all columns for selection and select non-NA columns
+#percNA < 0.5 is arbitrary, one can use any number between 0 and 0.9
+allCol <- names(train)
+nonNACol <- allCol[percNA < 0.5]
+
+#Subset original train dataset for non-NA columns
+newTrain <- subset(train, select = nonNACol)
+
+#2. Remove X, timestamp and window columns that are not useful here
+newTrain <- newTrain[,!grepl("^X|timestamp|window", names(newTrain))]
+dim(newTrain)
+```
+
+## Split Data
+I set the seed for reproducibility and use caret package to split data into training and testing sets.
+```{r, echo=TRUE}
+#Split data into training set and testing set
+set.seed(12345)
+inTrain <- createDataPartition(newTrain$classe, p = 0.7, list = F)
+myTrain <- newTrain[inTrain,]
+myTest <- newTrain[-inTrain,]
+```
+
+## Prediction using Random Forest with 5-fold cross validation
+I train the random forest model using the training data set and perform a 5-fold cross validation.
+```{r, echo=TRUE, eval=TRUE}
+#Train a random forest model with a 5-fold cross validation
+tc <- trainControl(method="cv", 5)
+modFit <- train(classe ~ ., data = myTrain, method="rf", trControl = tc, 
+                ntree=250)
+modFit
+```
+
+## Estimated Out-of-Sample Error Rate
+```{r, echo=TRUE, eval=TRUE}
+#Apply fitted model to myTest to estimate out-of-sample error rate
+predMyTest <- predict(modFit, myTest)
+cm <- confusionMatrix(myTest$classe, predMyTest)
+cm
+
+#Out-of-sample accuracy and out-of-sample error rate
+accu <-cm$overall[1]
+accu
+oose <- 1 - accu
+names(oose) = "oose"
+oose
+```
+The accuracy is `r accu`, and the estimated out-of-sample error rate is `r oose`.
+
+## Apply the Prediction Model to 20 Testing Data Set
+```{r, echo=TRUE, eval=FALSE}
+#Apply fitted model to predict the original 20 testing data
+result <- predict(modFit, test)
+result
+```
